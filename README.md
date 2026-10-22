@@ -4,7 +4,7 @@ Headscale fork that runs more than one tailnet in a single process. A cluster is
 
 Nodes in one network can ping each other. Nodes in another network do not see them.
 
-## Test on a server
+## Test on a server - 
 
 One Ubuntu machine runs Headscale. Two other machines run the normal Tailscale client. Nothing else is required. Skip Traefik for this test.
 
