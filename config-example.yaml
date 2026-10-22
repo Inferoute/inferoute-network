@@ -42,23 +42,12 @@ noise:
 # Each prefix consists of either an IPv4 or IPv6 address,
 # and the associated prefix length, delimited by a slash.
 #
-# WARNING: These prefixes MUST be subsets of the standard Tailscale ranges:
-#   - IPv4: 100.64.0.0/10 (CGNAT range)
-#   - IPv6: fd7a:115c:a1e0::/48 (Tailscale ULA range)
-#
-# Using a SUBSET of these ranges is supported and useful if you want to
-# limit IP allocation to a smaller block (e.g., 100.64.0.0/24).
-#
-# Using ranges OUTSIDE of CGNAT/ULA is NOT supported and will cause
-# undefined behaviour. The Tailscale client has hard-coded assumptions
-# about these ranges and will break in subtle, hard-to-debug ways.
-#
-# See:
-# IPv4: https://github.com/tailscale/tailscale/blob/22ebb25e833264f58d7c3f534a8b166894a89536/net/tsaddr/tsaddr.go#L33
-# IPv6: https://github.com/tailscale/tailscale/blob/22ebb25e833264f58d7c3f534a8b166894a89536/net/tsaddr/tsaddr.go#LL81C52-L81C71
+# These are the Inferoute ranges. A subset is fine. Anything else warns
+# at startup. The stock Tailscale client still uses 100.64.0.0/10 and
+# will not join a tailnet allocated from these prefixes.
 prefixes:
-  v4: 100.64.0.0/10
-  v6: fd7a:115c:a1e0::/48
+  v4: 198.18.0.0/15
+  v6: fd2e:7c4a:9b10::/48
 
   # Strategy used for allocation of IPs to nodes, available options:
   # - sequential (default): assigns the next free IP from the previous given

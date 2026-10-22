@@ -23,7 +23,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/viper"
 	"go4.org/netipx"
-	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/dnstype"
 	"tailscale.com/util/dnsname"
@@ -37,6 +36,11 @@ const (
 	defaultNodeStoreBatchSize = 100
 
 	dnsDocsURL = "https://headscale.net/stable/ref/dns/"
+
+	// Supported allocation ranges. The Inferoute client uses these, not
+	// Tailscale's 100.64.0.0/10 and fd7a:115c:a1e0::/48.
+	inferoutePrefix4 = "198.18.0.0/15"
+	inferoutePrefix6 = "fd2e:7c4a:9b10::/48"
 )
 
 var (
@@ -1421,24 +1425,24 @@ func LoadServerConfig() (*Config, error) {
 	logConfig := logConfig()
 	zerolog.SetGlobalLevel(logConfig.Level)
 
-	prefix4, v4NonStandard, err := parsePrefixConfig("prefixes.v4", tsaddr.CGNATRange(), "IPv4")
+	prefix4, v4NonStandard, err := parsePrefixConfig("prefixes.v4", netip.MustParsePrefix(inferoutePrefix4), "IPv4")
 	if err != nil {
 		v.Add(&ConfigError{
 			Reason:  "prefixes.v4 is not a valid CIDR",
 			Current: []KV{{"prefixes.v4", viper.GetString("prefixes.v4")}},
 			Detail:  err.Error(),
-			Hint:    `use CIDR form, e.g. "100.64.0.0/10" (CGNAT, headscale default)`,
+			Hint:    `use CIDR form, e.g. "` + inferoutePrefix4 + `"`,
 			Cause:   err,
 		})
 	}
 
-	prefix6, v6NonStandard, err := parsePrefixConfig("prefixes.v6", tsaddr.TailscaleULARange(), "IPv6")
+	prefix6, v6NonStandard, err := parsePrefixConfig("prefixes.v6", netip.MustParsePrefix(inferoutePrefix6), "IPv6")
 	if err != nil {
 		v.Add(&ConfigError{
 			Reason:  "prefixes.v6 is not a valid CIDR",
 			Current: []KV{{"prefixes.v6", viper.GetString("prefixes.v6")}},
 			Detail:  err.Error(),
-			Hint:    `use CIDR form, e.g. "fd7a:115c:a1e0::/48" (Tailscale ULA, headscale default)`,
+			Hint:    `use CIDR form, e.g. "` + inferoutePrefix6 + `"`,
 			Cause:   err,
 		})
 	}
@@ -1461,29 +1465,23 @@ func LoadServerConfig() (*Config, error) {
 				{"prefixes.v4", viper.GetString("prefixes.v4")},
 				{"prefixes.v6", viper.GetString("prefixes.v6")},
 			},
-			Hint:  `set at least one of prefixes.v4 (default: "100.64.0.0/10") or prefixes.v6 (default: "fd7a:115c:a1e0::/48")`,
+			Hint:  `set at least one of prefixes.v4 ("` + inferoutePrefix4 + `") or prefixes.v6 ("` + inferoutePrefix6 + `")`,
 			Cause: ErrNoPrefixConfigured,
 		})
 	}
 
 	if v4NonStandard || v6NonStandard {
 		warnBanner([]string{
-			"You have overridden the default Headscale IP prefixes",
-			"with a range outside of the standard CGNAT and/or ULA",
-			"ranges. This is NOT a supported configuration.",
+			"You have overridden the Inferoute IP prefixes.",
+			"This is NOT a supported configuration.",
 			"",
-			"Using subsets of the default ranges (100.64.0.0/10 for",
-			"IPv4, fd7a:115c:a1e0::/48 for IPv6) is fine. Using",
-			"ranges outside of these will cause undefined behaviour",
-			"as the Tailscale client is NOT designed to operate on",
-			"any other ranges.",
+			"Using subsets of " + inferoutePrefix4 + " and",
+			inferoutePrefix6 + " is fine. The stock Tailscale",
+			"client uses 100.64.0.0/10 and will not accept these",
+			"addresses. Use the inferscale client.",
 			"",
-			"Please revert your prefixes to subsets of the standard",
-			"ranges as described in the example configuration.",
-			"",
-			"Any issue raised using a range outside of the",
-			"supported range will be labelled as wontfix",
-			"and closed.",
+			"Please revert your prefixes to subsets of the",
+			"ranges in the example configuration.",
 		})
 	}
 

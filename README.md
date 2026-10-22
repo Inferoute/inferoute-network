@@ -4,9 +4,9 @@ Headscale fork that runs more than one tailnet in a single process. A cluster is
 
 Nodes in one network can ping each other. Nodes in another network do not see them.
 
-## Test on a server - 
+## Test on a server
 
-One Ubuntu machine runs Headscale. Two other machines run the normal Tailscale client. Nothing else is required. Skip Traefik for this test.
+One Ubuntu machine runs Headscale. Two other machines run the inferscale client, not the Tailscale client. Nothing else is required. Skip Traefik for this test.
 
 On the server:
 
@@ -25,8 +25,8 @@ unix_socket: /var/lib/headscale/headscale.sock
 noise:
   private_key_path: /var/lib/headscale/noise_private.key
 prefixes:
-  v4: 100.64.0.0/10
-  v6: fd7a:115c:a1e0::/48
+  v4: 198.18.0.0/15
+  v6: fd2e:7c4a:9b10::/48
 database:
   type: sqlite
   sqlite:
@@ -69,16 +69,16 @@ In another shell on the same server, create two clusters and one key per machine
 On Alice's machine and Bob's machine:
 
 ```shell
-tailscale up --login-server=http://203.0.113.10:8080 --auth-key=<their-key> --accept-routes
+inferscale up --login-server=http://203.0.113.10:8080 --auth-key=<their-key> --accept-routes
 ```
 
 On Carol's machine, use the `cluster-b` key.
 
-Alice and Bob each run `tailscale status`. Each should list the other and nobody else. `tailscale ip -4` prints a `100.64.x.x` address. `tailscale ping` to that address should succeed.
+Alice and Bob each run `inferscale status`. Each should list the other and nobody else. `inferscale ip -4` prints a `198.18.x.x` address. `inferscale ping` to that address should succeed.
 
-Carol's `tailscale status` must not list Alice or Bob. `tailscale ping` to one of their addresses must fail with `no matching peer`.
+Carol's `inferscale status` must not list Alice or Bob. `inferscale ping` to one of their addresses must fail with `no matching peer`.
 
-If `tailscale status` shows the peer and the ping still fails, the cluster is fine and UDP `41641` between those two machines is not. If the peer is missing, the control server is the problem.
+If `inferscale status` shows the peer and the ping still fails, the cluster is fine and UDP between those two machines is not. If the peer is missing, the control server is the problem.
 
 ## Test in Docker
 

@@ -15,8 +15,8 @@ noise:
   private_key_path: /var/lib/headscale/noise_private.key
 
 prefixes:
-  v4: 100.64.0.0/10
-  v6: fd7a:115c:a1e0::/48
+  v4: 198.18.0.0/15
+  v6: fd2e:7c4a:9b10::/48
   allocation: sequential
 
 # Relay stays on this machine. UDP 3478 is published on the host, not via Traefik.
