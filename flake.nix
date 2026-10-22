@@ -220,34 +220,6 @@
           # Full-tree golangci-lint (golines, gofumpt, etc.); uses the overlay's
           # golangci-lint built against the pinned Go.
           golangci-lint = fc.goLint common;
-
-          # nixfmt + prettier, excluding generated output. goFmt = "off":
-          # Go formatting (golines, gofumpt) is enforced by the golangci-lint
-          # check, not treefmt. prettierExts matches the old prettier-lint glob
-          # (no json: testdata fixtures are hand-formatted).
-          formatting = fc.goFormat (
-            common
-            // {
-              goFmt = "off";
-              prettier = true;
-              prettierExts = [
-                "ts"
-                "js"
-                "md"
-                "yaml"
-                "yml"
-                "sass"
-                "css"
-                "scss"
-                "html"
-              ];
-              # Mirror .prettierignore (docs/ are mkdocs-flavoured; gen/ generated).
-              fmtExclude = [
-                ./gen
-                ./docs
-              ];
-            }
-          );
         };
       in
       {
@@ -286,9 +258,7 @@
           drv = pkgs.headscale;
         };
 
-        # `nix fmt` is built from the same treefmt module as the formatting
-        # check, so the two cannot disagree. Every formatter the tree is judged
-        # by lives here, not in a hand-kept list of pre-commit hooks.
+        # `nix fmt`. Not a CI check.
         formatter = fc.formatter (
           common
           // {

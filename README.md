@@ -66,17 +66,46 @@ In another shell on the same server, create two clusters and one key per machine
 ./headscale preauthkeys create --network cluster-b --user carol --expiration 24h
 ```
 
-On Alice's machine and Bob's machine:
+On each client machine, install inferscale from the `edge` release of [Inferoute/inferoute-tailscale](https://github.com/Inferoute/inferoute-tailscale/releases/tag/edge). `gh` must be logged in. The repo is private. Do not install the Tailscale package. The two files are the same binary. The name `inferscaled` is the daemon. The name `inferscale` is the command you type.
+
+Linux amd64. Use `arm64` in the names on an arm64 machine.
 
 ```shell
-inferscale up --login-server=http://203.0.113.10:8080 --auth-key=<their-key> --accept-routes
+gh release download edge --repo Inferoute/inferoute-tailscale \
+  --pattern inferscale-linux-amd64 --pattern inferscaled-linux-amd64 --clobber
+sudo install -m 755 inferscale-linux-amd64 /usr/local/bin/inferscale
+sudo install -m 755 inferscaled-linux-amd64 /usr/local/bin/inferscaled
+sudo inferscaled
+```
+
+macOS. Use `amd64` on an Intel Mac.
+
+```shell
+gh release download edge --repo Inferoute/inferoute-tailscale \
+  --pattern inferscale-darwin-arm64 --pattern inferscaled-darwin-arm64 --clobber
+sudo install -m 755 inferscale-darwin-arm64 /usr/local/bin/inferscale
+sudo install -m 755 inferscaled-darwin-arm64 /usr/local/bin/inferscaled
+sudo inferscaled
+```
+
+Windows. Unzip `inferscale-windows-amd64.zip`. It contains `inferscale-windows-amd64.exe`, `inferscaled-windows-amd64.exe`, and `wintun.dll`. Keep `wintun.dll` next to the daemon exe. Run the daemon from an Administrator shell, then leave that window open.
+
+```shell
+gh release download edge --repo Inferoute/inferoute-tailscale \
+  --pattern inferscale-windows-amd64.zip --clobber
+```
+
+On Alice's machine and Bob's machine, in a second shell. On Windows, skip `sudo` and run `inferscale-windows-amd64.exe` from the unzipped directory.
+
+```shell
+sudo inferscale up --login-server=http://203.0.113.10:8080 --auth-key=<their-key> --accept-routes
 ```
 
 On Carol's machine, use the `cluster-b` key.
 
-Alice and Bob each run `inferscale status`. Each should list the other and nobody else. `inferscale ip -4` prints a `198.18.x.x` address. `inferscale ping` to that address should succeed.
+Alice and Bob each run `sudo inferscale status`. Each should list the other and nobody else. `sudo inferscale ip -4` prints a `198.18.x.x` address. `sudo inferscale ping` to that address should succeed.
 
-Carol's `inferscale status` must not list Alice or Bob. `inferscale ping` to one of their addresses must fail with `no matching peer`.
+Carol's `sudo inferscale status` must not list Alice or Bob. `sudo inferscale ping` to one of their addresses must fail with `no matching peer`.
 
 If `inferscale status` shows the peer and the ping still fails, the cluster is fine and UDP between those two machines is not. If the peer is missing, the control server is the problem.
 

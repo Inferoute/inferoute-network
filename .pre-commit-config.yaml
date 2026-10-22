@@ -32,8 +32,7 @@ repos:
   # Local hooks for project-specific tooling
   - repo: local
     hooks:
-      # One formatter for Nix and markup, built from the same treefmt module as
-      # the flake's formatting check, so the hook and the check cannot disagree.
+      # nix fmt for Nix and markup. Not a CI check.
       # Go is absent on purpose: golangci-lint owns it, below.
       - id: treefmt
         name: treefmt
