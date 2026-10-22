@@ -49,7 +49,7 @@ policy:
   path: ""
 ```
 
-Open TCP `8080` from the client machines, then start it:
+On the Headscale server, allow inbound TCP `8080`. The client machines only connect out to it. Then start Headscale:
 
 ```shell
 ./headscale serve
