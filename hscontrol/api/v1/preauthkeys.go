@@ -34,11 +34,15 @@ type PreAuthKey struct {
 // CreatePreAuthKeyRequestBody is the v1.CreatePreAuthKeyRequest body. Every
 // field is optional, hence omitempty throughout.
 type CreatePreAuthKeyRequestBody struct {
-	User       string     `format:"uint64"             json:"user,omitempty"`
+	// User is a numeric id, unless Network is set. With Network it is the
+	// Inferoute username in that tailnet, created when missing. Empty uses
+	// the tailnet's default user.
+	User       string     `json:"user,omitempty"`
 	Reusable   bool       `json:"reusable,omitempty"`
 	Ephemeral  bool       `json:"ephemeral,omitempty"`
 	Expiration *time.Time `json:"expiration,omitempty"`
 	ACLTags    []string   `json:"aclTags,omitempty"`
+	Network    string     `json:"network,omitempty"`
 }
 
 // ExpirePreAuthKeyRequestBody is the v1.ExpirePreAuthKeyRequest body.
@@ -90,11 +94,6 @@ func registerPreAuthKeys(api huma.API, b Backend) {
 		Tags:        []string{"PreAuthKeys"},
 		Security:    bearerAuth,
 	}, func(ctx context.Context, in *createPreAuthKeyInput) (*preAuthKeyOutput, error) {
-		user, err := parsePreAuthKeyUser(in.Body.User)
-		if err != nil {
-			return nil, err
-		}
-
 		for _, tag := range in.Body.ACLTags {
 			tagErr := validateTag(tag)
 			if tagErr != nil {
@@ -110,13 +109,36 @@ func registerPreAuthKeys(api huma.API, b Backend) {
 
 		var userID *types.UserID
 
-		if user != 0 {
-			u, getErr := b.State.GetUserByID(user)
-			if getErr != nil {
-				return nil, mapError("creating pre-auth key", getErr)
+		if in.Body.Network != "" {
+			network, netErr := b.State.GetNetworkByName(in.Body.Network)
+			if netErr != nil {
+				return nil, mapError("creating pre-auth key", netErr)
 			}
 
-			userID = u.TypedID()
+			owner, c, ownerErr := b.State.UserForInvite(network.ID, in.Body.User)
+			if ownerErr != nil {
+				return nil, mapError("creating pre-auth key", ownerErr)
+			}
+
+			if !c.IsEmpty() {
+				b.Change(c)
+			}
+
+			userID = owner.TypedID()
+		} else {
+			user, err := parsePreAuthKeyUser(in.Body.User)
+			if err != nil {
+				return nil, err
+			}
+
+			if user != 0 {
+				u, getErr := b.State.GetUserByID(user)
+				if getErr != nil {
+					return nil, mapError("creating pre-auth key", getErr)
+				}
+
+				userID = u.TypedID()
+			}
 		}
 
 		preAuthKey, err := b.State.CreatePreAuthKey(

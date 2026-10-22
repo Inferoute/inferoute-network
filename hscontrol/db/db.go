@@ -282,6 +282,13 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 				},
 				Rollback: func(db *gorm.DB) error { return nil },
 			},
+			{
+				// One process, many tailnets. Existing rows join the seeded
+				// "default" network so current installs keep working.
+				ID:       "202610221200-networks",
+				Migrate:  migrateNetworks,
+				Rollback: func(db *gorm.DB) error { return nil },
+			},
 		},
 	)
 
@@ -299,7 +306,12 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 			return err
 		}
 
-		err = tx.AutoMigrate(&types.Node{}, &types.Policy{})
+		err = tx.AutoMigrate(&types.Network{}, &types.Node{}, &types.Policy{})
+		if err != nil {
+			return err
+		}
+
+		err = seedDefaultNetwork(tx)
 		if err != nil {
 			return err
 		}
@@ -313,6 +325,8 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 			`DROP INDEX IF EXISTS "idx_name_provider_identifier"`,
 			`DROP INDEX IF EXISTS "idx_name_no_provider_identifier"`,
 			`DROP INDEX IF EXISTS "idx_nodes_auth_key_id"`,
+			`DROP INDEX IF EXISTS "idx_networks_name"`,
+			`DROP INDEX IF EXISTS "idx_networks_deleted_at"`,
 		}
 
 		for _, dropSQL := range dropIndexes {
@@ -326,9 +340,11 @@ WHERE tags IS NOT NULL AND tags != '[]' AND tags != '' AND tags != 'null'
 		indexes := []string{
 			`CREATE INDEX idx_users_deleted_at ON users(deleted_at)`,
 			`CREATE INDEX idx_policies_deleted_at ON policies(deleted_at)`,
-			`CREATE UNIQUE INDEX idx_provider_identifier ON users(provider_identifier) WHERE provider_identifier IS NOT NULL`,
-			`CREATE UNIQUE INDEX idx_name_provider_identifier ON users(name, provider_identifier)`,
-			`CREATE UNIQUE INDEX idx_name_no_provider_identifier ON users(name) WHERE provider_identifier IS NULL`,
+			`CREATE UNIQUE INDEX idx_provider_identifier ON users(network_id, provider_identifier) WHERE provider_identifier IS NOT NULL`,
+			`CREATE UNIQUE INDEX idx_name_provider_identifier ON users(network_id, name, provider_identifier)`,
+			`CREATE UNIQUE INDEX idx_name_no_provider_identifier ON users(network_id, name) WHERE provider_identifier IS NULL`,
+			`CREATE UNIQUE INDEX idx_networks_name ON networks(name) WHERE deleted_at IS NULL`,
+			`CREATE INDEX idx_networks_deleted_at ON networks(deleted_at)`,
 			`CREATE INDEX idx_nodes_auth_key_id ON nodes(auth_key_id)`,
 		}
 

@@ -21,6 +21,7 @@ type CreateUserRequestBody struct {
 	DisplayName string `json:"displayName,omitempty"`
 	Email       string `json:"email,omitempty"`
 	PictureURL  string `json:"pictureUrl,omitempty"`
+	Network     string `json:"network,omitempty"`
 }
 
 type (
@@ -70,10 +71,28 @@ func registerUsers(api huma.API, b Backend) {
 		Tags:        []string{"Users"},
 		Security:    bearerAuth,
 	}, func(ctx context.Context, in *createUserInput) (*userOutput, error) {
+		var networkID uint
+
+		if in.Body.Network != "" {
+			network, err := b.State.GetNetworkByName(in.Body.Network)
+			if err != nil {
+				return nil, mapError("creating user", err)
+			}
+
+			networkID = network.ID
+		}
+
 		// Pre-check yields a 409 for the common case; the DB unique constraint
-		// is the real guard.
+		// is the real guard. With a network, the name only has to be unique there.
 		if in.Body.Name != "" {
-			_, err := b.State.GetUserByName(in.Body.Name)
+			var err error
+
+			if networkID != 0 {
+				_, err = b.State.GetUserInNetwork(networkID, in.Body.Name)
+			} else {
+				_, err = b.State.GetUserByName(in.Body.Name)
+			}
+
 			if err == nil {
 				return nil, huma.Error409Conflict("user already exists")
 			}
@@ -84,6 +103,7 @@ func registerUsers(api huma.API, b Backend) {
 			DisplayName:   in.Body.DisplayName,
 			Email:         in.Body.Email,
 			ProfilePicURL: in.Body.PictureURL,
+			NetworkID:     networkID,
 		})
 		if err != nil {
 			return nil, mapError("creating user", err)

@@ -182,6 +182,10 @@ type Node struct {
 	UpdatedAt time.Time
 	DeletedAt *time.Time
 
+	// NetworkID is the tailnet this node belongs to. Copied from the owning
+	// user at registration. Tagged nodes keep the network of the key's user.
+	NetworkID uint `json:"-" gorm:"not null;default:1"`
+
 	// IsOnline caches [Node.ShouldBeOnline]; read it through [Node.Online].
 	// Every writer must derive it, so online means the same thing everywhere.
 	IsOnline *bool `gorm:"-"`
@@ -1170,6 +1174,10 @@ func equalUnordered[E comparable](a, b []E, cmp func(E, E) int) bool {
 // and enabled exit routes because autogroup:internet and exit-node
 // reduction depend on which exit nodes are advertised-and-approved.
 func (nv NodeView) HasPolicyChange(other NodeView) bool {
+	if nv.NetworkID() != other.NetworkID() {
+		return true
+	}
+
 	if nv.TypedUserID() != other.TypedUserID() {
 		return true
 	}

@@ -64,9 +64,20 @@ func (hsdb *HSDatabase) ListPeers(nodeID types.NodeID, peerIDs ...types.NodeID) 
 func ListPeers(tx *gorm.DB, nodeID types.NodeID, peerIDs ...types.NodeID) (types.Nodes, error) {
 	nodes := types.Nodes{}
 
-	err := preloadNode(tx).
-		Where("id <> ?", nodeID).
-		Where(peerIDs).Find(&nodes).Error
+	query := preloadNode(tx).Where("id <> ?", nodeID)
+
+	var networkID uint
+
+	err := tx.Model(&types.Node{}).Where("id = ?", nodeID).Pluck("network_id", &networkID).Error
+	if err != nil {
+		return types.Nodes{}, err
+	}
+
+	if networkID != 0 {
+		query = query.Where("network_id = ?", networkID)
+	}
+
+	err = query.Where(peerIDs).Find(&nodes).Error
 	if err != nil {
 		return types.Nodes{}, err
 	}
@@ -197,7 +208,18 @@ func RenameNode(tx *gorm.DB,
 	// Check if the new name is unique
 	var count int64
 
-	if err := tx.Model(&types.Node{}).Where("given_name = ? AND id != ?", newName, nodeID).Count(&count).Error; err != nil { //nolint:noinlineerr
+	var networkID uint
+
+	if err := tx.Model(&types.Node{}).Where("id = ?", nodeID).Pluck("network_id", &networkID).Error; err != nil { //nolint:noinlineerr
+		return fmt.Errorf("checking name uniqueness: %w", err)
+	}
+
+	q := tx.Model(&types.Node{}).Where("given_name = ? AND id != ?", newName, nodeID)
+	if networkID != 0 {
+		q = q.Where("network_id = ?", networkID)
+	}
+
+	if err := q.Count(&count).Error; err != nil { //nolint:noinlineerr
 		return fmt.Errorf("checking name uniqueness: %w", err)
 	}
 

@@ -515,7 +515,7 @@ func (s *NodeStore) applyBatch(batch []work) {
 		switch w.op {
 		case put:
 			n := w.node
-			n.GivenName = resolveGivenName(nodes, n.ID, n.GivenName)
+			n.GivenName = resolveGivenName(nodes, n.ID, n.NetworkID, n.GivenName)
 
 			nodes[w.nodeID] = n
 			if w.nodeResult != nil {
@@ -536,7 +536,7 @@ func (s *NodeStore) applyBatch(batch []work) {
 				fn(&n)
 
 				if n.GivenName != oldGivenName {
-					n.GivenName = resolveGivenName(nodes, n.ID, n.GivenName)
+					n.GivenName = resolveGivenName(nodes, n.ID, n.NetworkID, n.GivenName)
 				}
 
 				nodes[id] = n
@@ -578,7 +578,7 @@ func (s *NodeStore) applyBatch(batch []work) {
 
 			// DNS is case-insensitive: a legacy "Laptop" already holds "laptop".
 			for id, other := range nodes {
-				if id != w.nodeID && strings.EqualFold(other.GivenName, w.name) {
+				if id != w.nodeID && other.NetworkID == n.NetworkID && strings.EqualFold(other.GivenName, w.name) {
 					taken = true
 					break
 				}
@@ -666,14 +666,14 @@ func (s *NodeStore) applyBatch(batch []work) {
 // unused wins. Must be called from the [NodeStore] writer goroutine
 // (inside [NodeStore.applyBatch]) so the nodes map reflects all earlier
 // ops in the batch and no other writer can interleave.
-func resolveGivenName(nodes map[types.NodeID]types.Node, self types.NodeID, base string) string {
+func resolveGivenName(nodes map[types.NodeID]types.Node, self types.NodeID, networkID uint, base string) string {
 	if base == "" {
 		base = fallbackGivenName
 	}
 
 	taken := make(map[string]struct{}, len(nodes))
 	for id, n := range nodes {
-		if id == self {
+		if id == self || n.NetworkID != networkID {
 			continue
 		}
 

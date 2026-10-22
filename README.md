@@ -1,186 +1,92 @@
-![headscale logo](./docs/assets/logo/headscale3_header_stacked_left.png)
+# inferoute-network
 
-![ci](https://github.com/juanfont/headscale/actions/workflows/test.yml/badge.svg)
+Headscale fork that runs more than one tailnet in a single process. A cluster is a network. An Inferoute user is a Headscale user inside that network. Their machine is a node joined with a single-use pre-auth key.
 
-An open source, self-hosted implementation of the Tailscale control server.
+Nodes in one network can ping each other. Nodes in another network do not see them.
 
-Join our [Discord server](https://discord.gg/c84AZQhmpx) for a chat.
+## Test on a server
 
-**Note:** Always select the same GitHub tag as the released version you use
-to ensure you have the correct example configuration. The `main` branch might
-contain unreleased changes. The documentation is available for stable and
-development versions:
+One Ubuntu machine runs Headscale. Two other machines run the normal Tailscale client. Nothing else is required. Skip Traefik for this test.
 
-- [Documentation for the stable version](https://headscale.net/stable/)
-- [Documentation for the development version](https://headscale.net/development/)
-
-## What is Tailscale
-
-Tailscale is [a modern VPN](https://tailscale.com/) built on top of
-[Wireguard](https://www.wireguard.com/).
-It [works like an overlay network](https://tailscale.com/blog/how-tailscale-works/)
-between the computers of your networks - using
-[NAT traversal](https://tailscale.com/blog/how-nat-traversal-works/).
-
-Everything in Tailscale is Open Source, except the GUI clients for proprietary OS
-(Windows and macOS/iOS), and the control server.
-
-The control server works as an exchange point of Wireguard public keys for the
-nodes in the Tailscale network. It assigns the IP addresses of the clients,
-creates the boundaries between each user, enables sharing machines between users,
-and exposes the advertised routes of your nodes.
-
-A [Tailscale network (tailnet)](https://tailscale.com/docs/concepts/tailnet) is
-private network which Tailscale assigns to a user in terms of private users or an
-organisation.
-
-## Design goal
-
-Headscale aims to implement a self-hosted, open source alternative to the
-[Tailscale](https://tailscale.com/) control server. Headscale's goal is to
-provide self-hosters and hobbyists with an open-source server they can use for
-their projects and labs. It implements a narrow scope, a _single_ Tailscale
-network (tailnet), suitable for a personal use, or a small open-source
-organisation.
-
-## Supporting Headscale
-
-If you like `headscale` and find it useful, there is a sponsorship and donation
-buttons available in the repo.
-
-## Features
-
-Please see ["Features" in the documentation](https://headscale.net/stable/about/features/).
-
-## Client OS support
-
-Please see ["Client and operating system support" in the documentation](https://headscale.net/stable/about/clients/).
-
-## Running headscale
-
-**Please note that we do not support nor encourage the use of reverse proxies
-and container to run Headscale.**
-
-Please have a look at the [`documentation`](https://headscale.net/stable/).
-
-For NixOS users, a module is available in [`nix/`](./nix/).
-
-## Builds from `main`
-
-Development builds from the `main` branch are available as container images and
-binaries. See the [development builds](https://headscale.net/stable/setup/install/main/)
-documentation for details.
-
-## Talks
-
-- Fosdem 2026 (video): [Headscale & Tailscale: The complementary open source clone](https://fosdem.org/2026/schedule/event/KYQ3LL-headscale-the-complementary-open-source-clone/)
-  - presented by Kristoffer Dalby
-- Fosdem 2023 (video): [Headscale: How we are using integration testing to reimplement Tailscale](https://fosdem.org/2023/schedule/event/goheadscale/)
-  - presented by Juan Font Alonso and Kristoffer Dalby
-
-## Disclaimer
-
-This project is not associated with Tailscale Inc.
-
-However, one of the active maintainers for Headscale [is employed by Tailscale](https://tailscale.com/blog/opensource) and he is allowed to spend work hours contributing to the project. Contributions from this maintainer are reviewed by other maintainers.
-
-The maintainers work together on setting the direction for the project. The underlying principle is to serve the community of self-hosters, enthusiasts and hobbyists - while having a sustainable project.
-
-## Contributing
-
-Please read the [CONTRIBUTING.md](./CONTRIBUTING.md) file.
-
-Have also a look at our [AI_POLICY.md](./AI_POLICY.md).
-
-### Requirements
-
-To contribute to headscale you would need the latest version of [Go](https://golang.org)
-and [Buf](https://buf.build) (Protobuf generator).
-
-We recommend using [Nix](https://nixos.org/) to setup a development environment. This can
-be done with `nix develop`, which will install the tools and give you a shell.
-This guarantees that you will have the same dev env as `headscale` maintainers.
-
-### Code style
-
-To ensure we have some consistency with a growing number of contributions,
-this project has adopted linting and style/formatting rules:
-
-The **Go** code is linted with [`golangci-lint`](https://golangci-lint.run) and
-formatted with [`golines`](https://github.com/segmentio/golines) (width 88) and
-[`gofumpt`](https://github.com/mvdan/gofumpt).
-Please configure your editor to run the tools while developing and make sure to
-run `make lint` and `make fmt` before committing any code.
-
-The **Proto** code is linted with [`buf`](https://docs.buf.build/lint/overview) and
-formatted with [`clang-format`](https://clang.llvm.org/docs/ClangFormat.html).
-
-The **docs** are formatted with [`mdformat`](https://mdformat.readthedocs.io).
-
-The **rest** (Markdown, YAML, etc) is formatted with [`prettier`](https://prettier.io).
-
-Check out the `.golangci.yaml` and `Makefile` to see the specific configuration.
-
-### Install development tools
-
-- Go
-- Buf
-- Protobuf tools
-
-Install and activate:
+On the server:
 
 ```shell
-nix develop
+go build -o headscale ./cmd/headscale
+mkdir -p /var/lib/headscale
 ```
 
-### Testing and building
+Write `/etc/headscale/config.yaml`. `server_url` must be an address the other machines can reach. `127.0.0.1` makes them talk to themselves.
 
-Some parts of the project require the generation of Go code from Protobuf
-(if changes are made in `proto/`) and it must be (re-)generated with:
+```yaml
+server_url: http://203.0.113.10:8080
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 127.0.0.1:9090
+unix_socket: /var/lib/headscale/headscale.sock
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+dns:
+  magic_dns: true
+  base_domain: tailnet.inferoute.internal
+  override_local_dns: true
+  nameservers:
+    global:
+      - 1.1.1.1
+derp:
+  server:
+    enabled: false
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: false
+policy:
+  mode: file
+  path: ""
+```
+
+Open TCP `8080` from the client machines, then start it:
 
 ```shell
-make generate
+./headscale serve
 ```
 
-**Note**: Please check in changes from `gen/` in a separate commit to make it easier to review.
-
-To run the tests:
+In another shell on the same server, create two clusters and one key per machine. `--user` is the Inferoute username. The same name in two clusters is allowed.
 
 ```shell
-make test
+./headscale networks create --name cluster-a
+./headscale preauthkeys create --network cluster-a --user alice --expiration 24h
+./headscale preauthkeys create --network cluster-a --user bob --expiration 24h
+
+./headscale networks create --name cluster-b
+./headscale preauthkeys create --network cluster-b --user carol --expiration 24h
 ```
 
-To build the program:
+On Alice's machine and Bob's machine:
 
 ```shell
-make build
+tailscale up --login-server=http://203.0.113.10:8080 --auth-key=<their-key> --accept-routes
 ```
 
-### Development workflow
+On Carol's machine, use the `cluster-b` key.
 
-We recommend using Nix for dependency management to ensure you have all required tools. If you prefer to manage dependencies yourself, you can use Make directly:
+Alice and Bob each run `tailscale status`. Each should list the other and nobody else. `tailscale ip -4` prints a `100.64.x.x` address. `tailscale ping` to that address should succeed.
 
-**With Nix (recommended):**
+Carol's `tailscale status` must not list Alice or Bob. `tailscale ping` to one of their addresses must fail with `no matching peer`.
+
+If `tailscale status` shows the peer and the ping still fails, the cluster is fine and UDP `41641` between those two machines is not. If the peer is missing, the control server is the problem.
+
+## Test in Docker
+
+This runs real Tailscale clients and checks the same isolation. It needs Docker.
 
 ```shell
-nix develop
-make test
-make build
+go run ./cmd/hi doctor
+go run ./cmd/hi run "^TestTwoIsolatedNetworks$" --timeout=20m
 ```
 
-**With your own dependencies:**
-
-```shell
-make test
-make build
-```
-
-The Makefile will warn you if any required tools are missing and suggest running `nix develop`. Run `make help` to see all available targets.
-
-## Contributors
-
-<a href="https://github.com/juanfont/headscale/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=juanfont/headscale" />
-</a>
-
-Made with [contrib.rocks](https://contrib.rocks).
+After this branch is on `main`, GitHub publishes `ghcr.io/inferoute/inferoute-network:edge`. `deploy/` is the later layout, with Traefik and this machine's own DERP relay. Do not use that config for the test above.

@@ -15,7 +15,8 @@ CREATE TABLE users(
 
   created_at datetime,
   updated_at datetime,
-  deleted_at datetime
+  deleted_at datetime,
+  network_id integer NOT NULL DEFAULT 1
 );
 CREATE INDEX idx_users_deleted_at ON users(deleted_at);
 
@@ -34,9 +35,9 @@ CREATE INDEX idx_users_deleted_at ON users(deleted_at);
 -- - Cannot create another local user "alice" (blocked by idx_name_no_provider_identifier)
 -- - Cannot create another user with provider_identifier="alice_github" (blocked by idx_provider_identifier)
 -- - Cannot create user "bob" with provider_identifier="alice_github" (blocked by idx_name_provider_identifier)
-CREATE UNIQUE INDEX idx_provider_identifier ON users(provider_identifier) WHERE provider_identifier IS NOT NULL;
-CREATE UNIQUE INDEX idx_name_provider_identifier ON users(name, provider_identifier);
-CREATE UNIQUE INDEX idx_name_no_provider_identifier ON users(name) WHERE provider_identifier IS NULL;
+CREATE UNIQUE INDEX idx_provider_identifier ON users(network_id, provider_identifier) WHERE provider_identifier IS NOT NULL;
+CREATE UNIQUE INDEX idx_name_provider_identifier ON users(network_id, name, provider_identifier);
+CREATE UNIQUE INDEX idx_name_no_provider_identifier ON users(network_id, name) WHERE provider_identifier IS NULL;
 
 -- Unified store for every authenticatable secret (API keys, pre-auth keys,
 -- OAuth clients and access tokens), discriminated by kind. Only a hash of the
@@ -60,6 +61,7 @@ CREATE TABLE credentials(
   created_at datetime,
   expiration datetime,
   revoked datetime,
+  network_id integer,
 
   CONSTRAINT fk_credentials_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_credentials_hash CHECK(hash IS NOT NULL OR revoked IS NOT NULL),
@@ -93,6 +95,7 @@ CREATE TABLE nodes(
   created_at datetime,
   updated_at datetime,
   deleted_at datetime,
+  network_id integer NOT NULL DEFAULT 1,
 
   CONSTRAINT fk_nodes_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_nodes_auth_key FOREIGN KEY(auth_key_id) REFERENCES credentials(id)
@@ -105,8 +108,19 @@ CREATE TABLE policies(
 
   created_at datetime,
   updated_at datetime,
-  deleted_at datetime
+  deleted_at datetime,
+  network_id integer NOT NULL DEFAULT 1
 );
+
+CREATE TABLE networks(
+  id integer PRIMARY KEY AUTOINCREMENT,
+  created_at datetime,
+  updated_at datetime,
+  deleted_at datetime,
+  name text NOT NULL
+);
+CREATE UNIQUE INDEX idx_networks_name ON networks(name) WHERE deleted_at IS NULL;
+CREATE INDEX idx_networks_deleted_at ON networks(deleted_at);
 CREATE INDEX idx_policies_deleted_at ON policies(deleted_at);
 
 CREATE TABLE database_versions(

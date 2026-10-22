@@ -314,6 +314,7 @@ jobs:
           - TestGrantCapRelay
           - TestGrantCapDrive
           - TestK8sOperator
+          - TestTwoIsolatedNetworks
           - TestEnablingRoutes
           - TestHASubnetRouterFailover
           - TestSubnetRouteACL

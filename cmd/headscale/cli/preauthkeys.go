@@ -30,7 +30,8 @@ func init() {
 		StringP("expiration", "e", DefaultPreAuthKeyExpiry, "Human-readable expiration of the key (e.g. 30m, 24h)")
 	createPreAuthKeyCmd.Flags().
 		StringSlice("tags", []string{}, "Tags to automatically assign to node")
-	createPreAuthKeyCmd.PersistentFlags().StringP("user", "u", "", "User ID, or name if not a number")
+	createPreAuthKeyCmd.PersistentFlags().StringP("user", "u", "", "User ID, or name if not a number. With --network, the Inferoute username")
+	createPreAuthKeyCmd.Flags().String("network", "", "Network name. With no --user, the key is for that network's default user")
 	expirePreAuthKeyCmd.PersistentFlags().Uint64P("id", "i", 0, "Authkey ID")
 	deletePreAuthKeyCmd.PersistentFlags().Uint64P("id", "i", 0, "Authkey ID")
 }
@@ -112,17 +113,33 @@ var createPreAuthKeyCmd = &cobra.Command{
 			return err
 		}
 
-		userStr, err := userIDFromArg(ctx, client, userArg)
-		if err != nil {
-			return err
+		network, _ := cmd.Flags().GetString("network")
+
+		// With --network the argument is the Inferoute username. Resolving it
+		// here would use the global name lookup and fail once two tailnets
+		// share that name.
+		var userStr string
+		if network == "" {
+			userStr, err = userIDFromArg(ctx, client, userArg)
+			if err != nil {
+				return err
+			}
+		} else {
+			userStr = userArg
 		}
 
 		request := clientv1.CreatePreAuthKeyJSONRequestBody{
-			User:       &userStr,
 			Reusable:   &reusable,
 			Ephemeral:  &ephemeral,
 			AclTags:    &tags,
 			Expiration: &expiryTime,
+		}
+		if network != "" {
+			request.Network = &network
+		}
+
+		if userStr != "" || network == "" {
+			request.User = &userStr
 		}
 
 		resp, err := client.CreatePreAuthKeyWithResponse(ctx, request)

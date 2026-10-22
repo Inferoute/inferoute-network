@@ -32,6 +32,7 @@ const credentialsDDLSQLite = `CREATE TABLE credentials(
   created_at datetime,
   expiration datetime,
   revoked datetime,
+  network_id integer,
 
   CONSTRAINT fk_credentials_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_credentials_hash CHECK(hash IS NOT NULL OR revoked IS NOT NULL),
@@ -59,6 +60,7 @@ const credentialsDDLPostgres = `CREATE TABLE credentials(
   created_at timestamptz,
   expiration timestamptz,
   revoked timestamptz,
+  network_id bigint,
 
   CONSTRAINT fk_credentials_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_credentials_hash CHECK(hash IS NOT NULL OR revoked IS NOT NULL),

@@ -126,6 +126,7 @@ var _UserViewNeedsRegeneration = User(struct {
 	ProviderIdentifier sql.NullString
 	Provider           string
 	ProfilePicURL      string
+	NetworkID          uint
 }{})
 
 // View returns a read-only view of Node.
@@ -307,6 +308,7 @@ var _NodeViewNeedsRegeneration = Node(struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
+	NetworkID      uint
 	IsOnline       *bool
 	Unhealthy      bool
 	ActiveSessions int
@@ -557,4 +559,5 @@ var _CredentialViewNeedsRegeneration = Credential(struct {
 	CreatedAt   *time.Time
 	Expiration  *time.Time
 	Revoked     *time.Time
+	NetworkID   *uint
 }{})

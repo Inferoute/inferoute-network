@@ -1,0 +1,33 @@
+# Paste into the Inferoute stack later. This file does not start that stack.
+# Traefik needs an entrypoint named websecure on :443 before the router below works.
+# GHCR is private: the host needs a read token for ghcr.io/inferoute/inferoute-network.
+#
+# If tailscale up stalls, the HTTP proxy dropped Upgrade: tailscale-control-protocol
+# or Upgrade: derp. Switch this hostname to a Traefik TCP router and let Headscale
+# hold the certificate. One port serves /api/v1 and the Tailscale paths, so the
+# hostname is either proxied or passed through.
+services:
+  headscale:
+    image: ghcr.io/inferoute/inferoute-network:edge
+    command: ["serve"]
+    restart: unless-stopped
+    volumes:
+      - headscale:/var/lib/headscale
+      - ./headscale.yaml:/etc/headscale/config.yaml:ro
+    ports:
+      - "3478:3478/udp"
+    networks:
+      - inferoute-net
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.headscale.rule=Host(`hs.example.com`)
+      - traefik.http.routers.headscale.entrypoints=websecure
+      - traefik.http.routers.headscale.tls=true
+      - traefik.http.services.headscale.loadbalancer.server.port=8080
+
+networks:
+  inferoute-net:
+    external: true
+
+volumes:
+  headscale:

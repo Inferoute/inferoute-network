@@ -37,6 +37,7 @@ var registerMethodToV1Enum = map[string]string{
 // timestamps as JSON null when unset.
 type Node struct {
 	ID              string          `format:"uint64"                                                                                      json:"id"`
+	NetworkID       string          `format:"uint64"                                                                                      json:"networkId"`
 	MachineKey      string          `json:"machineKey"`
 	NodeKey         string          `json:"nodeKey"`
 	DiscoKey        string          `json:"discoKey"`
@@ -101,7 +102,8 @@ type (
 
 type (
 	listNodesInput struct {
-		User string `query:"user"`
+		User    string `query:"user"`
+		Network string `query:"network"`
 	}
 	listNodesOutput struct {
 		Body struct {
@@ -214,10 +216,29 @@ func registerNodeReadOps(api huma.API, b Backend) {
 			nodes = b.State.ListNodesByUser(types.UserID(user.ID))
 		}
 
-		out := &listNodesOutput{}
-		out.Body.Nodes = make([]Node, nodes.Len())
+		var networkID uint
+		if in.Network != "" {
+			network, err := b.State.GetNetworkByName(in.Network)
+			if err != nil {
+				return nil, mapError("listing nodes", err)
+			}
 
-		for i, node := range nodes.All() {
+			networkID = network.ID
+		}
+
+		selected := make([]types.NodeView, 0, nodes.Len())
+		for _, node := range nodes.All() {
+			if networkID != 0 && node.NetworkID() != networkID {
+				continue
+			}
+
+			selected = append(selected, node)
+		}
+
+		out := &listNodesOutput{}
+		out.Body.Nodes = make([]Node, len(selected))
+
+		for i, node := range selected {
 			n := nodeFromView(node)
 
 			// Tags-as-identity: tagged nodes are presented as the special
@@ -594,6 +615,7 @@ func registerNodeAdminOps(api huma.API, b Backend) {
 func nodeFromView(view types.NodeView) Node {
 	n := Node{
 		ID:              view.StringID(),
+		NetworkID:       strconv.FormatUint(uint64(view.NetworkID()), 10),
 		MachineKey:      view.MachineKey().String(),
 		NodeKey:         view.NodeKey().String(),
 		DiscoKey:        view.DiscoKey().String(),

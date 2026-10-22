@@ -35,6 +35,7 @@ var _UserCloneNeedsRegeneration = User(struct {
 	ProviderIdentifier sql.NullString
 	Provider           string
 	ProfilePicURL      string
+	NetworkID          uint
 }{})
 
 // Clone makes a deep copy of Node.
@@ -104,6 +105,7 @@ var _NodeCloneNeedsRegeneration = Node(struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	DeletedAt      *time.Time
+	NetworkID      uint
 	IsOnline       *bool
 	Unhealthy      bool
 	ActiveSessions int
@@ -206,4 +208,5 @@ var _CredentialCloneNeedsRegeneration = Credential(struct {
 	CreatedAt   *time.Time
 	Expiration  *time.Time
 	Revoked     *time.Time
+	NetworkID   *uint
 }{})

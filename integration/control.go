@@ -28,6 +28,7 @@ type ControlServer interface {
 	WaitForRunning() error
 	Restart() error
 	CreateUser(user string) (*clientv1.User, error)
+	CreateNetwork(name string) (*clientv1.Network, error)
 	CreateAuthKey(user uint64, reusable bool, ephemeral bool) (*clientv1.PreAuthKey, error)
 	CreateAuthKeyWithTags(user uint64, reusable bool, ephemeral bool, tags []string) (*clientv1.PreAuthKey, error)
 	CreateAuthKeyWithOptions(opts hsic.AuthKeyOptions) (*clientv1.PreAuthKey, error)

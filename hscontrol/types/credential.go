@@ -55,6 +55,10 @@ type Credential struct {
 	CreatedAt  *time.Time
 	Expiration *time.Time
 	Revoked    *time.Time
+
+	// NetworkID scopes pre-auth keys to a tailnet. Nil for process-global
+	// API keys and OAuth credentials.
+	NetworkID *uint `json:"-"`
 }
 
 // IsTagged reports whether this credential carries tags. For a pre-auth key

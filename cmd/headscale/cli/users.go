@@ -150,6 +150,7 @@ func init() {
 	createUserCmd.Flags().StringP("display-name", "d", "", "Display name")
 	createUserCmd.Flags().StringP("email", "e", "", "Email")
 	createUserCmd.Flags().StringP("picture-url", "p", "", "Profile picture URL")
+	createUserCmd.Flags().String("network", "", "Network name. Defaults to the default network")
 	userCmd.AddCommand(listUsersCmd)
 	usernameAndIDFlag(listUsersCmd)
 	listUsersCmd.Flags().StringP("email", "e", "", "Email")
@@ -197,6 +198,10 @@ var createUserCmd = &cobra.Command{
 			}
 
 			request.PictureUrl = &pictureURL
+		}
+
+		if network, _ := cmd.Flags().GetString("network"); network != "" {
+			request.Network = &network
 		}
 
 		log.Trace().Interface(zf.Request, request).Msg("sending CreateUser request")

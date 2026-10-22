@@ -319,8 +319,38 @@ func policyPeersFunc(pm policy.PolicyManager) PeersFunc {
 			log.Error().Err(err).Msg("refreshing policy nodes before peer map build")
 		}
 
-		return pm.BuildPeerMap(slice)
+		// ACL runs inside one network. Cross-network pairs never reach it,
+		// so a missing or allow-all policy cannot leak peers.
+		return buildPeerMapByNetwork(pm, nodes)
 	}
+}
+
+func buildPeerMapByNetwork(pm policy.PolicyManager, nodes []types.NodeView) map[types.NodeID][]types.NodeID {
+	groups := make(map[uint][]types.NodeView)
+	order := make([]uint, 0)
+
+	for _, node := range nodes {
+		id := uint(0)
+		if node.Valid() {
+			id = node.NetworkID()
+		}
+
+		if _, ok := groups[id]; !ok {
+			order = append(order, id)
+		}
+
+		groups[id] = append(groups[id], node)
+	}
+
+	peers := make(map[types.NodeID][]types.NodeID, len(nodes))
+
+	for _, id := range order {
+		for nodeID, nodePeers := range pm.BuildPeerMap(views.SliceOf(groups[id])) {
+			peers[nodeID] = nodePeers
+		}
+	}
+
+	return peers
 }
 
 // Close gracefully shuts down the [State] instance and releases all resources.
@@ -438,6 +468,104 @@ func (s *State) CreateUser(user types.User) (*types.User, change.Change, error) 
 	log.Info().Str(zf.UserName, user.Name).Msg("user created")
 
 	return &user, c, nil
+}
+
+// CreateNetwork creates a tailnet and its single default user.
+func (s *State) CreateNetwork(name string) (*types.Network, *types.User, change.Change, error) {
+	network, user, err := s.db.CreateNetwork(name)
+	if err != nil {
+		return nil, nil, change.Change{}, err
+	}
+
+	c, err := s.updatePolicyManagerUsers()
+	if err != nil {
+		return network, user, change.Change{}, fmt.Errorf("updating policy manager after network creation: %w", err)
+	}
+
+	if c.IsEmpty() {
+		c = change.PolicyChange()
+	}
+
+	return network, user, c, nil
+}
+
+func (s *State) ListNetworks() ([]types.Network, error) {
+	return s.db.ListNetworks()
+}
+
+func (s *State) GetNetwork(id uint) (*types.Network, error) {
+	return s.db.GetNetwork(id)
+}
+
+func (s *State) GetNetworkByName(name string) (*types.Network, error) {
+	return s.db.GetNetworkByName(name)
+}
+
+func (s *State) GetUserInNetwork(networkID uint, name string) (*types.User, error) {
+	return s.db.GetUserInNetwork(networkID, name)
+}
+
+// UserForInvite resolves the Inferoute username inside one tailnet.
+// An empty name is that tailnet's default user. A missing named user is created.
+func (s *State) UserForInvite(networkID uint, name string) (*types.User, change.Change, error) {
+	if name == "" {
+		name = types.DefaultNetworkUser
+	}
+
+	user, created, err := s.db.GetOrCreateUserInNetwork(networkID, name)
+	if err != nil || !created {
+		return user, change.Change{}, err
+	}
+
+	c, err := s.updatePolicyManagerUsers()
+	if err != nil {
+		return user, change.Change{}, fmt.Errorf("updating policy manager after user creation: %w", err)
+	}
+
+	if c.IsEmpty() {
+		c = change.PolicyChange()
+	}
+
+	return user, c, nil
+}
+
+// DeleteNetwork removes every node in the tailnet, then the tailnet itself.
+// The default network is refused.
+func (s *State) DeleteNetwork(id uint) ([]change.Change, error) {
+	nodeIDs, err := s.db.ListNodeIDsByNetwork(id)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []change.Change
+
+	for _, nodeID := range nodeIDs {
+		node, ok := s.GetNodeByID(nodeID)
+		if !ok {
+			continue
+		}
+
+		nodeChanges, err := s.DeleteNode(node)
+		if err != nil {
+			return changes, err
+		}
+
+		changes = append(changes, nodeChanges...)
+	}
+
+	err = s.db.DestroyNetwork(id)
+	if err != nil {
+		return changes, err
+	}
+
+	c, err := s.updatePolicyManagerUsers()
+	if err != nil {
+		return changes, err
+	}
+
+	changes = append(changes, c)
+
+	return changes, nil
 }
 
 // UpdateUser modifies an existing user using the provided update function within a transaction.
@@ -2138,10 +2266,15 @@ func (s *State) createAndSaveNewNode(params newNodeParams) (types.NodeView, erro
 
 		nodeToRegister.AuthKey = params.PreAuthKey.AsCredential()
 		nodeToRegister.AuthKeyID = &params.PreAuthKey.ID
+
+		if params.PreAuthKey.User != nil {
+			nodeToRegister.NetworkID = params.PreAuthKey.User.NetworkID
+		}
 	} else {
 		// Non-PreAuthKey registration (OIDC, CLI) - always user-owned
 		nodeToRegister.UserID = &params.User.ID
 		nodeToRegister.User = &params.User
+		nodeToRegister.NetworkID = params.User.NetworkID
 		nodeToRegister.Tags = nil
 	}
 

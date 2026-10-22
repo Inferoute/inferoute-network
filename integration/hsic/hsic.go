@@ -1178,6 +1178,27 @@ func (t *HeadscaleInContainer) WaitForRunning() error {
 	})
 }
 
+// CreateNetwork adds a tailnet. Headscale also creates its default user.
+func (t *HeadscaleInContainer) CreateNetwork(name string) (*clientv1.Network, error) {
+	result, _, err := dockertestutil.ExecuteCommand(
+		t.container,
+		[]string{binHeadscale, "networks", "create", "--name", name, flagOutput, "json"},
+		[]string{},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var network clientv1.Network
+
+	err = json.Unmarshal([]byte(result), &network)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshalling network: %w", err)
+	}
+
+	return &network, nil
+}
+
 // CreateUser adds a new user to the Headscale instance.
 func (t *HeadscaleInContainer) CreateUser(
 	user string,
@@ -1222,6 +1243,9 @@ type AuthKeyOptions struct {
 	Ephemeral bool
 	// Tags are the tags to assign to the auth key
 	Tags []string
+	// Network is a tailnet name. With User unset, the key belongs to that
+	// network's default user.
+	Network string
 }
 
 // CreateAuthKeyWithOptions creates a new "authorisation key" with the specified options.
@@ -1256,6 +1280,10 @@ func (t *HeadscaleInContainer) CreateAuthKeyWithOptions(opts AuthKeyOptions) (*c
 
 	if len(opts.Tags) > 0 {
 		command = append(command, "--tags", strings.Join(opts.Tags, ","))
+	}
+
+	if opts.Network != "" {
+		command = append(command, "--network", opts.Network)
 	}
 
 	result, _, err := dockertestutil.ExecuteCommand(

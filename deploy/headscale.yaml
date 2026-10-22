@@ -1,0 +1,66 @@
+# Headscale behind Traefik. TLS ends at the proxy. This file is the
+# contract for that layout; replace the placeholders before use.
+server_url: https://hs.example.com
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+
+# Traefik is another container. 127.0.0.1/32 would ignore its forwarding headers.
+# Tighten this to the inferoute-net subnet once Docker has assigned one.
+trusted_proxies:
+  - 172.16.0.0/12
+
+unix_socket: /var/lib/headscale/headscale.sock
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# Relay stays on this machine. UDP 3478 is published on the host, not via Traefik.
+# Set ipv4 to this machine's public address.
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: inferoute
+    region_name: Inferoute
+    verify_clients: true
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+    ipv4: 198.51.100.1
+  urls: []
+  paths: []
+  auto_update_enabled: false
+  update_frequency: 3h
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+    wal_autocheckpoint: 1000
+
+tls:
+  cert_path: ""
+  key_path: ""
+
+policy:
+  mode: file
+  path: ""
+
+dns:
+  magic_dns: true
+  # Must not be the server_url host.
+  base_domain: tailnet.inferoute.internal
+  override_local_dns: true
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 1.0.0.1
+
+node:
+  expiry: 0

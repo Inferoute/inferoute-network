@@ -1905,6 +1905,7 @@ func TestNodeStoreAdjacencyMatchesFullBuild(t *testing.T) {
 var nodeFieldImpact = map[string]string{
 	"ID": "relation", "IPv4": "relation", "IPv6": "relation",
 	"UserID": "relation", "User": "relation", "Tags": "relation",
+	"NetworkID": "relation",
 	"ApprovedRoutes": "relation", "Hostinfo": "relation",
 	"IsOnline": "election", "Unhealthy": "election",
 	"MachineKey": "payload", "NodeKey": "payload", "DiscoKey": "payload",

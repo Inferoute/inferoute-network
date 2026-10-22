@@ -22,7 +22,6 @@ defaults:
 
 jobs:
   container:
-    if: github.repository == 'juanfont/headscale'
     runs-on: ubuntu-latest
     permissions:
       packages: write
@@ -30,12 +29,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Login to DockerHub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Login to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -52,34 +45,25 @@ jobs:
 
       - name: Build and push to GHCR
         env:
-          KO_DOCKER_REPO: ghcr.io/juanfont/headscale
+          KO_DOCKER_REPO: ghcr.io/inferoute/inferoute-network
           KO_DEFAULTBASEIMAGE: gcr.io/distroless/base-debian13
           CGO_ENABLED: "0"
         run: |
+          # main publishes the rolling tag. A manual run from another branch
+          # must not move `edge`.
+          tag="edge,main-${GITHUB_SHA::7}"
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            tag="${GITHUB_REF_NAME//\//-}"
+          fi
           ko build \
             --bare \
-            --image-annotation=org.opencontainers.image.source=https://github.com/juanfont/headscale \
-            --image-label=org.opencontainers.image.source=https://github.com/juanfont/headscale \
+            --image-annotation=org.opencontainers.image.source=https://github.com/Inferoute/inferoute-network \
+            --image-label=org.opencontainers.image.source=https://github.com/Inferoute/inferoute-network \
             --platform=linux/amd64,linux/arm64 \
-            --tags=main-${GITHUB_SHA::7},development \
-            ./cmd/headscale
-
-      - name: Push to Docker Hub
-        env:
-          KO_DOCKER_REPO: headscale/headscale
-          KO_DEFAULTBASEIMAGE: gcr.io/distroless/base-debian13
-          CGO_ENABLED: "0"
-        run: |
-          ko build \
-            --bare \
-            --image-annotation=org.opencontainers.image.source=https://github.com/juanfont/headscale \
-            --image-label=org.opencontainers.image.source=https://github.com/juanfont/headscale \
-            --platform=linux/amd64,linux/arm64 \
-            --tags=main-${GITHUB_SHA::7},development \
+            --tags="$tag" \
             ./cmd/headscale
 
   binaries:
-    if: github.repository == 'juanfont/headscale'
     runs-on: ubuntu-latest
     strategy:
       matrix:

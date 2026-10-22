@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/juanfont/headscale/hscontrol/db"
 	"github.com/juanfont/headscale/hscontrol/state"
+	"github.com/juanfont/headscale/hscontrol/types"
 	"gorm.io/gorm"
 )
 
@@ -23,6 +24,7 @@ func mapError(msg string, err error) error {
 		errors.Is(err, state.ErrNodeNotFound),
 		errors.Is(err, state.ErrNodeNotInNodeStore),
 		errors.Is(err, db.ErrUserNotFound),
+		errors.Is(err, db.ErrNetworkNotFound),
 		errors.Is(err, db.ErrNodeNotFoundRegistrationCache),
 		errors.Is(err, state.ErrRegistrationExpired):
 		return huma.Error404NotFound(msg, err)
@@ -36,11 +38,14 @@ func mapError(msg string, err error) error {
 		errors.Is(err, db.ErrUserStillHasNodes),
 		errors.Is(err, db.ErrCannotChangeOIDCUser),
 		errors.Is(err, db.ErrPreAuthKeyNotTaggedOrOwned),
-		errors.Is(err, db.ErrSingleUseAuthKeyHasBeenUsed):
+		errors.Is(err, db.ErrSingleUseAuthKeyHasBeenUsed),
+		errors.Is(err, db.ErrNetworkIsDefault),
+		errors.Is(err, types.ErrInvalidNetworkName):
 		return huma.Error400BadRequest(msg, err)
 
 	case errors.Is(err, state.ErrNodeKeyInUse),
-		errors.Is(err, state.ErrAmbiguousNodeOwnership):
+		errors.Is(err, state.ErrAmbiguousNodeOwnership),
+		errors.Is(err, db.ErrNetworkNameTaken):
 		return huma.Error409Conflict(msg, err)
 
 	default:
