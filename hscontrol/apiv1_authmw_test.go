@@ -8,18 +8,61 @@ import (
 	"testing"
 	"time"
 
+	apiv1 "github.com/juanfont/headscale/hscontrol/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestAPIV1AuthMiddleware proves the v1 API, mounted on the real router, is
-// guarded by the Huma security middleware: missing or bad Bearer tokens are
-// rejected with 401 before reaching a handler; a valid key passes to 200. The
-// per-endpoint harness bypasses auth via WithLocalTrust, so this is the one
-// place the middleware itself is exercised.
-func TestAPIV1AuthMiddleware(t *testing.T) {
+// TestPublicRouterOmitsAdminAPI proves /api is not on the listener inferscale
+// dials. Admin stays on the unix socket. A bearer token does not bring it back.
+func TestPublicRouterOmitsAdminAPI(t *testing.T) {
 	app := createTestApp(t)
 	handler := app.HTTPHandler()
+
+	expiry := time.Now().Add(time.Hour)
+	valid, _, err := app.state.CreateAPIKey(&expiry)
+	require.NoError(t, err)
+
+	paths := []string{
+		"/api/v1/node",
+		"/api/v1/openapi.yaml",
+		"/api/v1/docs",
+		"/api/v2/tailnet/-/devices",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			for _, auth := range []string{"", "Bearer " + valid} {
+				req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
+				if auth != "" {
+					req.Header.Set("Authorization", auth)
+				}
+
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+
+				assert.Equalf(t, http.StatusNotFound, rec.Code, "auth %q body: %s", auth, rec.Body.String())
+				assert.NotContains(t, rec.Body.String(), "nodes")
+			}
+		})
+	}
+
+	// Control plane stays. /health is what inferscaled checks.
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	assert.NotEqual(t, http.StatusNotFound, rec.Code, "body: %s", rec.Body.String())
+}
+
+// TestAPIV1AuthMiddleware proves the v1 mux still rejects a missing or bad
+// bearer before the handler. The public router does not mount this mux.
+func TestAPIV1AuthMiddleware(t *testing.T) {
+	app := createTestApp(t)
+	handler, _ := apiv1.Handler(apiv1.Backend{
+		State:  app.state,
+		Change: app.Change,
+		Cfg:    app.cfg,
+	})
 
 	expiry := time.Now().Add(time.Hour)
 	valid, _, err := app.state.CreateAPIKey(&expiry)
@@ -53,44 +96,15 @@ func TestAPIV1AuthMiddleware(t *testing.T) {
 	}
 }
 
-// TestAPIV1DocsArePublic proves the OpenAPI document and docs UI live under
-// /api/v1 and are reachable without an API key, while the operations beside them
-// stay key-gated. The docs page points at the versioned spec so a future
-// /api/v2 can carry its own.
-func TestAPIV1DocsArePublic(t *testing.T) {
-	app := createTestApp(t)
-	handler := app.HTTPHandler()
-
-	tests := []struct {
-		path     string
-		contains string
-	}{
-		{path: "/api/v1/openapi.yaml", contains: "openapi:"},
-		{path: "/api/v1/docs", contains: "/api/v1/openapi.yaml"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			// No Authorization header: these must be public.
-			req := httptest.NewRequestWithContext(
-				context.Background(), http.MethodGet, tt.path, nil,
-			)
-
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			require.Equalf(t, http.StatusOK, rec.Code, "%s should be public; body: %s", tt.path, rec.Body.String())
-			assert.Containsf(t, rec.Body.String(), tt.contains, "%s body", tt.path)
-		})
-	}
-}
-
-// TestAPIV1Unauthorized401 pins the 401 body: RFC 7807 JSON containing
-// "Unauthorized", under 100 bytes and leaking no data, as the integration
-// auth-bypass tests require.
+// TestAPIV1Unauthorized401 pins the 401 body on the v1 mux: RFC 7807 JSON
+// containing "Unauthorized", under 100 bytes, and leaking no data.
 func TestAPIV1Unauthorized401(t *testing.T) {
 	app := createTestApp(t)
-	handler := app.HTTPHandler()
+	handler, _ := apiv1.Handler(apiv1.Backend{
+		State:  app.state,
+		Change: app.Change,
+		Cfg:    app.cfg,
+	})
 
 	req := httptest.NewRequestWithContext(
 		context.Background(), http.MethodGet, "/api/v1/node", nil,

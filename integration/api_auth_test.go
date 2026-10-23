@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	clientv1 "github.com/juanfont/headscale/gen/client/v1"
 	"github.com/juanfont/headscale/integration/hsic"
 	"github.com/juanfont/headscale/integration/integrationutil"
 	"github.com/juanfont/headscale/integration/tsic"
@@ -19,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAPIAuthenticationBypass tests that the API authentication middleware
-// properly blocks unauthorized requests and does not leak sensitive data.
+// TestAPIAuthenticationBypass tests that the public listener does not serve
+// /api, so a missing, bad, or valid bearer cannot read users.
 // This test reproduces the security issue described in:
 // - https://github.com/juanfont/headscale/issues/2809
 // - https://github.com/juanfont/headscale/pull/2810
@@ -91,14 +90,10 @@ func TestAPIAuthenticationBypass(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should return 401 Unauthorized
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode,
-			"Expected 401 status code for request without auth header")
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"Expected 404: /api is not on the public listener")
 
 		bodyStr := string(body)
-
-		// Should contain "Unauthorized" message
-		assert.Contains(t, bodyStr, "Unauthorized",
-			"Response should contain 'Unauthorized' message")
 
 		// Should NOT contain user data after "Unauthorized"
 		// This is the security bypass - if users array is present, auth was bypassed
@@ -143,11 +138,10 @@ func TestAPIAuthenticationBypass(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode,
-			"Expected 401 status code for invalid auth header format")
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"Expected 404: /api is not on the public listener")
 
 		bodyStr := string(body)
-		assert.Contains(t, bodyStr, "Unauthorized")
 
 		// Should not leak user data
 		assert.NotContains(t, bodyStr, "user1",
@@ -177,11 +171,10 @@ func TestAPIAuthenticationBypass(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode,
-			"Expected 401 status code for invalid bearer token")
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"Expected 404: /api is not on the public listener")
 
 		bodyStr := string(body)
-		assert.Contains(t, bodyStr, "Unauthorized")
 
 		// Should not leak user data
 		assert.NotContains(t, bodyStr, "user1",
@@ -210,28 +203,14 @@ func TestAPIAuthenticationBypass(t *testing.T) {
 		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
-		// Should succeed with valid auth
-		assert.Equal(t, http.StatusOK, resp.StatusCode,
-			"Expected 200 status code with valid API key")
+		// A valid key does not mount /api on this listener.
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+			"Expected 404 with a valid API key")
 
-		// Should be able to parse as JSON
-		var response clientv1.ListUsersOutputBody
-
-		err = json.Unmarshal(body, &response)
-		require.NoError(t, err, "Response should be valid JSON with valid API key")
-
-		// Should contain our test users
-		users := response.Users
-		assert.Len(t, users, 3, "Should have 3 users")
-
-		userNames := make([]string, len(users))
-		for i, u := range users {
-			userNames[i] = u.Name
-		}
-
-		assert.Contains(t, userNames, "user1")
-		assert.Contains(t, userNames, "user2")
-		assert.Contains(t, userNames, "user3")
+		bodyStr := string(body)
+		assert.NotContains(t, bodyStr, "user1")
+		assert.NotContains(t, bodyStr, "user2")
+		assert.NotContains(t, bodyStr, "user3")
 	})
 }
 
@@ -305,13 +284,8 @@ func TestAPIAuthenticationBypassCurl(t *testing.T) {
 
 		responseBody += responseBodySb280.String()
 
-		// Should return 401
-		assert.Equal(t, "401", httpCode,
-			"Curl without auth should return 401")
-
-		// Should contain Unauthorized
-		assert.Contains(t, responseBody, "Unauthorized",
-			"Response should contain 'Unauthorized'")
+		assert.Equal(t, "404", httpCode,
+			"Curl without auth should return 404")
 
 		// Should NOT leak user data
 		assert.NotContains(t, responseBody, "testuser1",
@@ -358,8 +332,7 @@ func TestAPIAuthenticationBypassCurl(t *testing.T) {
 
 		responseBody += responseBodySb326.String()
 
-		assert.Equal(t, "401", httpCode)
-		assert.Contains(t, responseBody, "Unauthorized")
+		assert.Equal(t, "404", httpCode)
 		assert.NotContains(t, responseBody, "testuser1",
 			"SECURITY ISSUE: Should not leak user data")
 		assert.NotContains(t, responseBody, "testuser2",
@@ -400,18 +373,10 @@ func TestAPIAuthenticationBypassCurl(t *testing.T) {
 
 		responseBody += responseBodySb361.String()
 
-		// Should succeed
-		assert.Equal(t, "200", httpCode,
-			"Curl with valid API key should return 200")
-
-		// Should contain user data
-		var response clientv1.ListUsersOutputBody
-
-		err = json.Unmarshal([]byte(responseBody), &response)
-		require.NoError(t, err, "Response should be valid JSON")
-
-		users := response.Users
-		assert.Len(t, users, 2, "Should have 2 users")
+		assert.Equal(t, "404", httpCode,
+			"Curl with a valid API key should return 404")
+		assert.NotContains(t, responseBody, "testuser1")
+		assert.NotContains(t, responseBody, "testuser2")
 	})
 }
 
@@ -494,8 +459,10 @@ func TestRemoteCLIAuthenticationBypass(t *testing.T) {
 				strings.Contains(outputStr, "unauthenticated") ||
 				strings.Contains(outputStr, "invalid token") ||
 				strings.Contains(outputStr, "validating token") ||
-				strings.Contains(outputStr, "authentication"),
-			"Error should indicate authentication failure, got: %s", output)
+				strings.Contains(outputStr, "authentication") ||
+				strings.Contains(outputStr, "404") ||
+				strings.Contains(outputStr, "not found"),
+			"Error should indicate the remote API refused the call, got: %s", output)
 
 		// Should NOT leak user data
 		assert.NotContains(t, output, "grpcuser1",
@@ -513,25 +480,10 @@ func TestRemoteCLIAuthenticationBypass(t *testing.T) {
 			},
 		)
 
-		// Should succeed
-		require.NoError(t, err,
-			"remote connection with valid API key should succeed, output: %s", output)
-
-		// CLI outputs the users array directly, not wrapped in a response object
-		// Parse as JSON array (CLI uses [json.Marshal])
-		var users []*clientv1.User
-
-		err = json.Unmarshal([]byte(output), &users)
-		require.NoError(t, err, "Response should be valid JSON array")
-		assert.Len(t, users, 2, "Should have 2 users")
-
-		userNames := make([]string, len(users))
-		for i, u := range users {
-			userNames[i] = u.Name
-		}
-
-		assert.Contains(t, userNames, "grpcuser1")
-		assert.Contains(t, userNames, "grpcuser2")
+		require.Error(t, err,
+			"remote /api is not served, output: %s", output)
+		assert.NotContains(t, output, "grpcuser1")
+		assert.NotContains(t, output, "grpcuser2")
 	})
 }
 
@@ -647,8 +599,10 @@ cli:
 				strings.Contains(outputStr, "unauthenticated") ||
 				strings.Contains(outputStr, "invalid token") ||
 				strings.Contains(outputStr, "validating token") ||
-				strings.Contains(outputStr, "authentication"),
-			"Error should indicate authentication failure, got: %s", output)
+				strings.Contains(outputStr, "authentication") ||
+				strings.Contains(outputStr, "404") ||
+				strings.Contains(outputStr, "not found"),
+			"Error should indicate the remote API refused the call, got: %s", output)
 
 		// Should NOT leak user data
 		assert.NotContains(t, output, "cliuser1",
@@ -672,24 +626,9 @@ cli:
 			},
 		)
 
-		// Should succeed
-		require.NoError(t, err,
-			"CLI with valid API key should succeed")
-
-		// CLI outputs the users array directly, not wrapped in a response object
-		// Parse as JSON array (CLI uses [json.Marshal])
-		var users []*clientv1.User
-
-		err = json.Unmarshal([]byte(output), &users)
-		require.NoError(t, err, "Response should be valid JSON array")
-		assert.Len(t, users, 2, "Should have 2 users")
-
-		userNames := make([]string, len(users))
-		for i, u := range users {
-			userNames[i] = u.Name
-		}
-
-		assert.Contains(t, userNames, "cliuser1")
-		assert.Contains(t, userNames, "cliuser2")
+		require.Error(t, err,
+			"remote /api is not served, output: %s", output)
+		assert.NotContains(t, output, "cliuser1")
+		assert.NotContains(t, output, "cliuser2")
 	})
 }

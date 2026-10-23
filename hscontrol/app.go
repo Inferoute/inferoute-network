@@ -466,18 +466,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// serveHumaMux dispatches to a Huma mux mounted under the outer chi router.
-// Huma registers operations at absolute paths (/api/v1/...), so chi's route
-// context must be cleared for the inner mux to re-match against the original URL.
-func serveHumaMux(mux http.Handler) http.HandlerFunc {
-	return func(w http.ResponseWriter, req *http.Request) {
-		mux.ServeHTTP(w, req.WithContext(
-			context.WithValue(req.Context(), chi.RouteCtxKey, nil),
-		))
-	}
-}
-
-func (h *Headscale) createRouter(apiV1Mux, apiV2Mux http.Handler) *chi.Mux {
+func (h *Headscale) createRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(metrics.Collector(metrics.CollectorOpts{
 		Host:  false,
@@ -529,14 +518,9 @@ func (h *Headscale) createRouter(apiV1Mux, apiV2Mux http.Handler) *chi.Mux {
 		r.HandleFunc("/bootstrap-dns", derpServer.DERPBootstrapDNSHandler(h.state.DERPMap))
 	}
 
-	// Auth is enforced inside each Huma mux per-operation, so the whole API
-	// mounts as one handler per version: operations need an API key while the
-	// OpenAPI document and docs UI stay public. v1 is the headscale-native admin
-	// API; v2 is Headscale's v2 API, which ports some endpoints from Tailscale.
-	r.Route("/api", func(r chi.Router) {
-		r.Handle("/v1/*", serveHumaMux(apiV1Mux))
-		r.Handle("/v2/*", serveHumaMux(apiV2Mux))
-	})
+	// /api/v1 and /api/v2 stay on the unix socket only. This listener is the
+	// one inferscale dials (Noise, /key, /derp, /health). Publishing it must
+	// not publish the admin API.
 	// Ping response endpoint: receives HEAD from clients responding
 	// to a [tailcfg.PingRequest]. The unguessable ping ID serves as authentication.
 	r.Head("/machine/ping-response", h.PingResponseHandler)
@@ -677,19 +661,17 @@ func (h *Headscale) Serve() error {
 		return fmt.Errorf("changing socket permission: %w", err)
 	}
 
-	// The Huma v1 API mux matches full /api/v1/... paths and is shared by
-	// the local unix socket (served without authentication, local trust)
-	// and the remote TCP router (served behind the API-key middleware).
+	// The Huma v1 API mux matches full /api/v1/... paths. It is served only on
+	// the local unix socket, without authentication: socket access is the
+	// credential. It is not mounted on the remote TCP listener.
 	humaMux, _ := apiv1.Handler(apiv1.Backend{
 		State:  h.state,
 		Change: h.Change,
 		Cfg:    h.cfg,
 	})
 
-	// The Headscale v2 API. Served behind Basic/Bearer auth on the remote
-	// listener, and over the local unix socket (local trust) so the CLI can
-	// manage OAuth clients through the same v2 keys handler the Tailscale
-	// ecosystem uses.
+	// The Headscale v2 API. Served on the unix socket (local trust) so the CLI
+	// can manage OAuth clients. Not mounted on the remote listener.
 	humaV2Mux, _ := apiv2.Handler(apiv2.Backend{
 		State:  h.state,
 		Change: h.Change,
@@ -729,7 +711,7 @@ func (h *Headscale) Serve() error {
 	//
 	// This is the regular router that we expose
 	// over our main Addr
-	router := h.createRouter(humaMux, humaV2Mux)
+	router := h.createRouter()
 
 	httpServer := &http.Server{
 		Addr:        h.cfg.Addr,
@@ -1281,19 +1263,7 @@ func (h *Headscale) Change(cs ...change.Change) {
 // The handler serves the Tailscale control protocol including the /key
 // endpoint and /ts2021 Noise upgrade path.
 func (h *Headscale) HTTPHandler() http.Handler {
-	humaMux, _ := apiv1.Handler(apiv1.Backend{
-		State:  h.state,
-		Change: h.Change,
-		Cfg:    h.cfg,
-	})
-
-	humaV2Mux, _ := apiv2.Handler(apiv2.Backend{
-		State:  h.state,
-		Change: h.Change,
-		Cfg:    h.cfg,
-	})
-
-	return h.createRouter(humaMux, humaV2Mux)
+	return h.createRouter()
 }
 
 // NoisePublicKey returns the server's Noise protocol public key.
