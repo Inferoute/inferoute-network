@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	clientv1 "github.com/juanfont/headscale/gen/client/v1"
 	"github.com/spf13/cobra"
 )
+
+var errNetworkNotFound = errors.New("network not found")
 
 func init() {
 	rootCmd.AddCommand(networkCmd)
@@ -116,5 +119,5 @@ func networkIDByName(ctx context.Context, client *clientv1.ClientWithResponses, 
 		}
 	}
 
-	return "", fmt.Errorf("network %q not found", name)
+	return "", fmt.Errorf("network %q not found: %w", name, errNetworkNotFound)
 }

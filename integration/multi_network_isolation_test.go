@@ -87,6 +87,7 @@ func TestTwoIsolatedNetworks(t *testing.T) {
 	require.NoError(t, err)
 
 	var other string
+
 	for _, ip := range bIPs {
 		if ip.Is4() {
 			other = ip.String()

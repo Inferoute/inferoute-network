@@ -21,5 +21,5 @@ type Policy struct {
 	// NetworkID scopes the policy row. Zero is rewritten to the default
 	// network on insert. Selection of per-network policy is not wired yet:
 	// the running policy manager still loads the latest row.
-	NetworkID uint `json:"-" gorm:"not null;default:1"`
+	NetworkID uint `gorm:"not null;default:1" json:"-"`
 }

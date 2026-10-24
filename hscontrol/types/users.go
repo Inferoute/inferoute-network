@@ -98,7 +98,7 @@ type User struct {
 
 	// NetworkID is the tailnet this user belongs to. Zero means "not set";
 	// the BeforeCreate hook assigns the default network.
-	NetworkID uint `json:"-" gorm:"not null;default:1"`
+	NetworkID uint `gorm:"not null;default:1" json:"-"`
 }
 
 func (u *User) StringID() string {

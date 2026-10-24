@@ -184,7 +184,7 @@ type Node struct {
 
 	// NetworkID is the tailnet this node belongs to. Copied from the owning
 	// user at registration. Tagged nodes keep the network of the key's user.
-	NetworkID uint `json:"-" gorm:"not null;default:1"`
+	NetworkID uint `gorm:"not null;default:1" json:"-"`
 
 	// IsOnline caches [Node.ShouldBeOnline]; read it through [Node.Online].
 	// Every writer must derive it, so online means the same thing everywhere.

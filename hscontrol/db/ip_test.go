@@ -443,6 +443,7 @@ func TestBackfillIPAddresses(t *testing.T) {
 		"ID",
 		"User",
 		"UserID",
+		"NetworkID",
 		"Endpoints",
 		"Hostinfo",
 		"CreatedAt",

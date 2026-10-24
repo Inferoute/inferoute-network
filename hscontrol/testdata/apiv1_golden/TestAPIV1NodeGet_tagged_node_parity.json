@@ -13,6 +13,7 @@
       "lastSeen": "\u003ctimestamp\u003e",
       "machineKey": "\u003csecret\u003e",
       "name": "node-b",
+      "networkId": "1",
       "nodeKey": "\u003csecret\u003e",
       "online": false,
       "preAuthKey": {

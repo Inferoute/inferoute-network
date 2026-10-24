@@ -345,9 +345,7 @@ func buildPeerMapByNetwork(pm policy.PolicyManager, nodes []types.NodeView) map[
 	peers := make(map[types.NodeID][]types.NodeID, len(nodes))
 
 	for _, id := range order {
-		for nodeID, nodePeers := range pm.BuildPeerMap(views.SliceOf(groups[id])) {
-			peers[nodeID] = nodePeers
-		}
+		maps.Copy(peers, pm.BuildPeerMap(views.SliceOf(groups[id])))
 	}
 
 	return peers

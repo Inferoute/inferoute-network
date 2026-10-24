@@ -217,6 +217,7 @@ func registerNodeReadOps(api huma.API, b Backend) {
 		}
 
 		var networkID uint
+
 		if in.Network != "" {
 			network, err := b.State.GetNetworkByName(in.Network)
 			if err != nil {
