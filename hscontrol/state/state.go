@@ -785,7 +785,7 @@ func (s *State) DeleteNode(node types.NodeView) ([]change.Change, error) {
 // one [State.Disconnect] call once the session ends (see poll.go).
 // An expired key can keep polling control, but cannot make the node online.
 func (s *State) Connect(id types.NodeID) ([]change.Change, uint64) {
-	prevRoutes := s.nodeStore.PrimaryRoutes()
+	prevRoutes := s.nodeStore.routeAssignment()
 
 	// Reconnecting clears Unhealthy: the node just proved basic
 	// connectivity by completing the Noise handshake.
@@ -812,7 +812,7 @@ func (s *State) Connect(id types.NodeID) ([]change.Change, uint64) {
 
 	log.Info().EmbedObject(node).Msg("node connected")
 
-	if !maps.Equal(prevRoutes, s.nodeStore.PrimaryRoutes()) {
+	if !maps.Equal(prevRoutes, s.nodeStore.routeAssignment()) {
 		c = append(c, change.NodeAdded(id))
 	}
 
@@ -1185,7 +1185,7 @@ func (s *State) SetApprovedRoutes(nodeID types.NodeID, routes []netip.Prefix) (t
 	// TODO(kradalby): In principle we should call the AutoApprove logic here
 	// because even if the CLI removes an auto-approved route, it will be added
 	// back automatically.
-	prevRoutes := s.nodeStore.PrimaryRoutes()
+	prevRoutes := s.nodeStore.routeAssignment()
 	prevPeers := s.nodeStore.ListPeerIDs(nodeID)
 	genBefore := s.polMan.NodesGeneration()
 
@@ -1208,7 +1208,7 @@ func (s *State) SetApprovedRoutes(nodeID types.NodeID, routes []netip.Prefix) (t
 
 	// The reads around the write can also see concurrent writers; that
 	// only turns a whole-peer update into a policy change, never back.
-	routeChange := !maps.Equal(prevRoutes, s.nodeStore.PrimaryRoutes())
+	routeChange := !maps.Equal(prevRoutes, s.nodeStore.routeAssignment())
 	peersChanged := !slices.Equal(prevPeers, s.nodeStore.ListPeerIDs(nodeID))
 
 	if err != nil {
@@ -1629,7 +1629,7 @@ func (s *State) BatchSetNodeHealth(updates map[types.NodeID]bool) bool {
 		return false
 	}
 
-	prevRoutes := s.nodeStore.PrimaryRoutes()
+	prevRoutes := s.nodeStore.routeAssignment()
 
 	// Skip writes that would not change anything so an all-unchanged
 	// probe cycle publishes no snapshot. healthSetter stays authoritative
@@ -1652,7 +1652,7 @@ func (s *State) BatchSetNodeHealth(updates map[types.NodeID]bool) bool {
 
 	s.nodeStore.UpdateNodes(fns)
 
-	return !maps.Equal(prevRoutes, s.nodeStore.PrimaryRoutes())
+	return !maps.Equal(prevRoutes, s.nodeStore.routeAssignment())
 }
 
 // healthSetter returns an UpdateNodeFunc that flips n.Unhealthy to
@@ -3512,7 +3512,7 @@ func (s *State) UpdateNodeFromMapRequest(id types.NodeID, req tailcfg.MapRequest
 	)
 	// Snapshot the primary assignment so we can tell whether the
 	// Hostinfo + auto-approval that follows shifted any prefix.
-	prevRoutes := s.nodeStore.PrimaryRoutes()
+	prevRoutes := s.nodeStore.routeAssignment()
 	genBefore := s.polMan.NodesGeneration()
 
 	// We need to ensure we update the node as it is in the [NodeStore] at
@@ -3693,7 +3693,7 @@ func (s *State) UpdateNodeFromMapRequest(id types.NodeID, req tailcfg.MapRequest
 	// snapshot diff catches that.
 	nodeRouteChange := change.Change{}
 
-	if !maps.Equal(prevRoutes, s.nodeStore.PrimaryRoutes()) {
+	if !maps.Equal(prevRoutes, s.nodeStore.routeAssignment()) {
 		log.Debug().
 			Caller().
 			Uint64(zf.NodeID, id.Uint64()).

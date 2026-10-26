@@ -339,3 +339,65 @@ func TestPrimaries_HANodes(t *testing.T) {
 		})
 	}
 }
+
+func (f *primariesFixture) setNetwork(id types.NodeID, networkID uint) {
+	f.t.Helper()
+	f.ns.UpdateNode(id, func(n *types.Node) {
+		n.NetworkID = networkID
+	})
+}
+
+// Two Inferoute clusters advertising the same LAN must both stay
+// primary. A process-global election would drop the subnet from the
+// losing tailnet's AllowedIPs.
+func TestPrimaries_SamePrefixDifferentNetworksBothWin(t *testing.T) {
+	f := newPrimariesFixture(t, 1, 2)
+	f.setNetwork(1, 1)
+	f.setNetwork(2, 2)
+	f.advertise(1, mp("10.0.0.0/24"))
+	f.advertise(2, mp("10.0.0.0/24"))
+
+	f.requireNodeRoutes(1, mp("10.0.0.0/24"))
+	f.requireNodeRoutes(2, mp("10.0.0.0/24"))
+}
+
+func TestHANodes_DifferentNetworksSamePrefixAreNotHA(t *testing.T) {
+	f := newPrimariesFixture(t, 1, 2)
+	f.setNetwork(1, 1)
+	f.setNetwork(2, 2)
+	f.advertise(1, mp("10.0.0.0/24"))
+	f.advertise(2, mp("10.0.0.0/24"))
+
+	assert.Empty(t, f.ns.HANodes())
+}
+
+func TestHANodes_SameNetworkSamePrefixIsStillHA(t *testing.T) {
+	f := newPrimariesFixture(t, 1, 2)
+	f.setNetwork(1, 5)
+	f.setNetwork(2, 5)
+	f.advertise(1, mp("10.0.0.0/24"))
+	f.advertise(2, mp("10.0.0.0/24"))
+
+	assert.Equal(t, map[netip.Prefix][]types.NodeID{
+		mp("10.0.0.0/24"): {1, 2},
+	}, f.ns.HANodes())
+	f.requireNodeRoutes(1, mp("10.0.0.0/24"))
+	f.requireNodeRoutes(2)
+}
+
+func TestHANodes_DoesNotIncludeOtherNetworkSingleton(t *testing.T) {
+	f := newPrimariesFixture(t, 1, 2, 3)
+	f.setNetwork(1, 1)
+	f.setNetwork(2, 1)
+	f.setNetwork(3, 2)
+	f.advertise(1, mp("10.0.0.0/24"))
+	f.advertise(2, mp("10.0.0.0/24"))
+	f.advertise(3, mp("10.0.0.0/24"))
+
+	assert.Equal(t, map[netip.Prefix][]types.NodeID{
+		mp("10.0.0.0/24"): {1, 2},
+	}, f.ns.HANodes())
+	f.requireNodeRoutes(1, mp("10.0.0.0/24"))
+	f.requireNodeRoutes(2)
+	f.requireNodeRoutes(3, mp("10.0.0.0/24"))
+}
