@@ -1,6 +1,7 @@
 package state
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"maps"
@@ -168,11 +169,29 @@ type Snapshot struct {
 	nodesByUser map[types.UserID][]types.NodeView
 	allNodes    []types.NodeView
 
-	// routes maps each prefix to its current primary advertiser. The
-	// previous assignment is carried over when still valid so the
-	// primary does not flap on every unrelated batch.
-	routes         map[netip.Prefix]types.NodeID
+	// routes maps each (network, prefix) to its current primary
+	// advertiser. Election is per-network so two tailnets can both
+	// be primary for the same subnet. The previous assignment is
+	// carried over when still valid so the primary does not flap
+	// on every unrelated batch.
+	routes         map[routeKey]types.NodeID
 	isPrimaryRoute map[types.NodeID]bool
+}
+
+// routeKey is one elected subnet inside one tailnet. Prefixes are
+// not unique across networks: two clusters routinely advertise the
+// same LAN (10.0.0.0/24, 192.168.1.0/24).
+type routeKey struct {
+	networkID uint
+	prefix    netip.Prefix
+}
+
+func cmpRouteKey(a, b routeKey) int {
+	if a.networkID != b.networkID {
+		return cmp.Compare(a.networkID, b.networkID)
+	}
+
+	return a.prefix.Compare(b.prefix)
 }
 
 // PeersFunc is a function that takes a list of nodes and returns a map
@@ -716,7 +735,7 @@ func snapshotFromNodes(
 	}
 
 	var (
-		routes         map[netip.Prefix]types.NodeID
+		routes         map[routeKey]types.NodeID
 		isPrimaryRoute map[types.NodeID]bool
 	)
 
@@ -725,7 +744,7 @@ func snapshotFromNodes(
 	} else {
 		// Carrying the previous assignment forward lets a still-valid
 		// primary survive unrelated batches.
-		var prevRoutes map[netip.Prefix]types.NodeID
+		var prevRoutes map[routeKey]types.NodeID
 		if prev != nil {
 			prevRoutes = prev.routes
 		}
@@ -778,14 +797,14 @@ func snapshotFromNodes(
 	return newSnap
 }
 
-// onlineAdvertisers maps each non-exit prefix to the IDs of online nodes
-// that approve it. Nodes are visited in the order of ids, so the per-prefix
-// slices preserve that order.
+// onlineAdvertisers maps each non-exit (network, prefix) to the IDs
+// of online nodes in that tailnet that approve it. Nodes are visited
+// in the order of ids, so the per-key slices preserve that order.
 func onlineAdvertisers(
 	nodes map[types.NodeID]types.Node,
 	ids []types.NodeID,
-) map[netip.Prefix][]types.NodeID {
-	advertisers := make(map[netip.Prefix][]types.NodeID)
+) map[routeKey][]types.NodeID {
+	advertisers := make(map[routeKey][]types.NodeID)
 
 	for _, id := range ids {
 		n := nodes[id]
@@ -798,7 +817,8 @@ func onlineAdvertisers(
 				continue
 			}
 
-			advertisers[p] = append(advertisers[p], id)
+			key := routeKey{networkID: n.NetworkID, prefix: p}
+			advertisers[key] = append(advertisers[key], id)
 		}
 	}
 
@@ -806,26 +826,31 @@ func onlineAdvertisers(
 }
 
 // electPrimaryRoutes picks the primary advertiser for each non-exit
-// prefix. Inputs are restricted to online nodes that advertise the
-// prefix. The previous primary is preserved when it is still online
-// and healthy (anti-flap); otherwise the lowest-NodeID healthy
-// advertiser wins. When every advertiser is unhealthy the previous
-// primary is preserved only if still a candidate — falling back to
-// any other candidate would point peers at a node the prober has
-// already declared unreachable, so leaving the prefix unmapped is
-// preferred until a probe cycle finds one that responds.
+// prefix inside one tailnet. Cross-network advertisers of the same
+// prefix do not compete: Inferoute clusters routinely share LAN
+// ranges (10.0.0.0/24, 192.168.1.0/24), and a global election would
+// drop the subnet from the losing tailnet's AllowedIPs.
+//
+// Inputs are restricted to online nodes that advertise the prefix.
+// The previous primary is preserved when it is still online and
+// healthy (anti-flap); otherwise the lowest-NodeID healthy advertiser
+// wins. When every advertiser is unhealthy the previous primary is
+// preserved only if still a candidate — falling back to any other
+// candidate would point peers at a node the prober has already
+// declared unreachable, so leaving the prefix unmapped is preferred
+// until a probe cycle finds one that responds.
 func electPrimaryRoutes(
 	nodes map[types.NodeID]types.Node,
-	prev map[netip.Prefix]types.NodeID,
-) (map[netip.Prefix]types.NodeID, map[types.NodeID]bool) {
+	prev map[routeKey]types.NodeID,
+) (map[routeKey]types.NodeID, map[types.NodeID]bool) {
 	advertisers := onlineAdvertisers(nodes, slices.Sorted(maps.Keys(nodes)))
 
-	routes := make(map[netip.Prefix]types.NodeID, len(advertisers))
-	for prefix, candidates := range advertisers {
-		if cur, ok := prev[prefix]; ok &&
+	routes := make(map[routeKey]types.NodeID, len(advertisers))
+	for key, candidates := range advertisers {
+		if cur, ok := prev[key]; ok &&
 			slices.Contains(candidates, cur) &&
 			!nodes[cur].Unhealthy {
-			routes[prefix] = cur
+			routes[key] = cur
 			continue
 		}
 
@@ -849,14 +874,14 @@ func electPrimaryRoutes(
 		// unreachable; leaving the prefix unmapped is honest until a
 		// probe cycle picks one that responds.
 		if !found {
-			if cur, ok := prev[prefix]; ok && slices.Contains(candidates, cur) {
+			if cur, ok := prev[key]; ok && slices.Contains(candidates, cur) {
 				selected = cur
 				found = true
 			}
 		}
 
 		if found {
-			routes[prefix] = selected
+			routes[key] = selected
 		}
 	}
 
@@ -1020,9 +1045,17 @@ func (s *NodeStore) ListPeerIDs(id types.NodeID) []types.NodeID {
 }
 
 // PrimaryRouteFor returns the current primary advertiser for prefix.
+// When more than one tailnet elects a primary for the same prefix the
+// first match is returned; callers that need per-network primaries
+// should use [NodeStore.PrimaryRoutesForNode].
 func (s *NodeStore) PrimaryRouteFor(prefix netip.Prefix) (types.NodeID, bool) {
-	id, ok := s.data.Load().routes[prefix]
-	return id, ok
+	for key, id := range s.data.Load().routes {
+		if key.prefix == prefix {
+			return id, true
+		}
+	}
+
+	return 0, false
 }
 
 // PrimaryRoutesForNode returns the prefixes for which id is the current
@@ -1035,9 +1068,9 @@ func (s *NodeStore) PrimaryRoutesForNode(id types.NodeID) []netip.Prefix {
 
 	out := make([]netip.Prefix, 0)
 
-	for prefix, nodeID := range snap.routes {
+	for key, nodeID := range snap.routes {
 		if nodeID == id {
-			out = append(out, prefix)
+			out = append(out, key.prefix)
 		}
 	}
 
@@ -1046,8 +1079,9 @@ func (s *NodeStore) PrimaryRoutesForNode(id types.NodeID) []netip.Prefix {
 	return out
 }
 
-// HANodes returns the prefixes with two or more online advertisers, the
-// candidate set the HA prober needs to monitor.
+// HANodes returns the prefixes with two or more online advertisers in
+// the same tailnet, the candidate set the HA prober needs to monitor.
+// Advertisers in different networks never form an HA pair.
 func (s *NodeStore) HANodes() map[netip.Prefix][]types.NodeID {
 	snap := s.data.Load()
 
@@ -1058,12 +1092,17 @@ func (s *NodeStore) HANodes() map[netip.Prefix][]types.NodeID {
 
 	out := make(map[netip.Prefix][]types.NodeID)
 
-	for p, ids := range advertisers {
+	for key, ids := range advertisers {
 		if len(ids) < 2 {
 			continue
 		}
 
-		out[p] = ids
+		out[key.prefix] = append(out[key.prefix], ids...)
+	}
+
+	for prefix, ids := range out {
+		slices.Sort(ids)
+		out[prefix] = ids
 	}
 
 	return out
@@ -1081,11 +1120,25 @@ func (s *NodeStore) IsNodeHealthy(id types.NodeID) bool {
 	return !n.Unhealthy
 }
 
-// PrimaryRoutes returns the snapshot's prefix→primary map. The map is
-// owned by the snapshot and must not be mutated; it is safe to read
-// concurrently because snapshots are immutable once published.
-func (s *NodeStore) PrimaryRoutes() map[netip.Prefix]types.NodeID {
+// routeAssignment returns the snapshot's (network, prefix)→primary
+// map. Owned by the snapshot and must not be mutated.
+func (s *NodeStore) routeAssignment() map[routeKey]types.NodeID {
 	return s.data.Load().routes
+}
+
+// PrimaryRoutes returns a prefix→primary map for debug and
+// single-network tests. Two tailnets that share a prefix collapse to
+// one entry; [NodeStore.routeAssignment] is the change-detection
+// source of truth.
+func (s *NodeStore) PrimaryRoutes() map[netip.Prefix]types.NodeID {
+	snap := s.data.Load()
+	out := make(map[netip.Prefix]types.NodeID, len(snap.routes))
+
+	for key, id := range snap.routes {
+		out[key.prefix] = id
+	}
+
+	return out
 }
 
 // PrimaryRoutesString renders the snapshot's prefix→primary map for
@@ -1096,16 +1149,16 @@ func (s *NodeStore) PrimaryRoutesString() string {
 		return ""
 	}
 
-	prefixes := make([]netip.Prefix, 0, len(snap.routes))
-	for p := range snap.routes {
-		prefixes = append(prefixes, p)
+	keys := make([]routeKey, 0, len(snap.routes))
+	for key := range snap.routes {
+		keys = append(keys, key)
 	}
 
-	slices.SortFunc(prefixes, netip.Prefix.Compare)
+	slices.SortFunc(keys, cmpRouteKey)
 
 	var b strings.Builder
-	for _, p := range prefixes {
-		fmt.Fprintf(&b, "%s: %d\n", p, snap.routes[p])
+	for _, key := range keys {
+		fmt.Fprintf(&b, "%s@%d: %d\n", key.prefix, key.networkID, snap.routes[key])
 	}
 
 	return b.String()
