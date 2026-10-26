@@ -188,8 +188,8 @@ func removeContainerWithRetry(ctx context.Context, cli *client.Client, container
 }
 
 // testContainerNamePrefixes are the name prefixes used by containers that the
-// integration test harness creates (headscale, tailscale, DERP, and k3s).
-var testContainerNamePrefixes = []string{"hs-", "ts-", "derp-", "k3s-"}
+// integration test harness creates (headscale, tailscale, and DERP).
+var testContainerNamePrefixes = []string{"hs-", "ts-", "derp-"}
 
 // matchesTestContainerPrefix reports whether name belongs to an integration
 // test container, ignoring any leading "/" that Docker prefixes names with.

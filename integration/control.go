@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"context"
 	"net/netip"
 
 	clientv1 "github.com/juanfont/headscale/gen/client/v1"
@@ -24,7 +23,6 @@ type ControlServer interface {
 	GetHealthEndpoint() string
 	GetEndpoint() string
 	GetIPEndpoint() string
-	CreateOAuthClient(ctx context.Context, scopes, tags []string) (string, string, error)
 	WaitForRunning() error
 	Restart() error
 	CreateUser(user string) (*clientv1.User, error)
