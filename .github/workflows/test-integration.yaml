@@ -287,6 +287,7 @@ jobs:
           - TestUserCommand
           - TestUserCreateCommand
           - TestUserCommandValidation
+          - TestClusterTailnetGrants
           - TestDERPVerifyEndpoint
           - TestResolveMagicDNS
           - TestResolveMagicDNSExtraRecordsPath
